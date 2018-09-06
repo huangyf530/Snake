@@ -29,6 +29,7 @@ public class Snake {
         foodLocation = new Vector<>();
         this.situation = situation;
         this.snakeNumber = snakeNumber;
+        this.direction = -1;
     }
 
     void goDie(){
@@ -42,6 +43,7 @@ public class Snake {
         for(int i = 0; i < bodyLocation.size(); i++){
             situation[bodyLocation.elementAt(i).Y][bodyLocation.elementAt(i).X] = 0;
         }
+        this.direction = -1;
     }
 
     void setInHole(Hole hole) {
@@ -120,6 +122,7 @@ public class Snake {
                 headLength = 0;
                 tailLength = snakeLength;
                 this.inHole.valid = true;
+                this.direction = -1;
             }
         }
     }

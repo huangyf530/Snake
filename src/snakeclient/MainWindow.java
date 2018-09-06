@@ -11,6 +11,7 @@ import java.awt.event.KeyEvent;
 import java.io.*;
 import java.net.Socket;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 public class MainWindow extends JPanel {
     private int beforeGame;
@@ -21,7 +22,9 @@ public class MainWindow extends JPanel {
     private ImageIcon backGround;
     private PauseButton pauseButton;//暂停按键
     private MusicButton musicButton;//音乐按键
-    JFrame mainWindow;
+    private SpeedButton speedDownButton;
+    private SpeedButton speedUPButton;
+    private JFrame mainWindow;
     private Direction d;
     private int myRole;
     private JLabel[] livesLabel;
@@ -30,6 +33,7 @@ public class MainWindow extends JPanel {
     private BufferedReader brFromServer;
     private DataOutputStream dosToServer;
     private SendThread thread;
+    private String myName;
     private int myLives;
     private int opLives;
     private int isPause;
@@ -38,18 +42,20 @@ public class MainWindow extends JPanel {
     int isOver;
     RCVThread rcvThread;
     private ImageIcon egg;
-    private TextArea txarChat;
-    private TextArea txarInput;
+    private JTextArea txarChat;
+    private JTextArea txarRank;
+    private JTextArea txarInput;
     private JButton btChat;
     private AudioInputStream currentSound;
     private Clip clip;
     private static URL musicURL = MainWindow.class.getResource("/resource/music.wav");
+    private JTextField txfdIPAdress;
+    private JTextField txfdPort;
     MainWindow(){
+        System.out.println("New one");
         rcvThread = new RCVThread(this);
         getBeginInter();
         getMusicStream();
-        System.out.println("hahhahah");
-        //playMusic();
     }
 
     private void getBeginInter(){
@@ -60,10 +66,20 @@ public class MainWindow extends JPanel {
         contentPane.setLayout(new GridLayout(12, 6));
         JButton beginButton = new JButton("开始游戏");
         beginButton.setFont(new Font("黑体", Font.ITALIC, 15));
+        txfdIPAdress = new JTextField("IP Address");
+        txfdPort = new JTextField("Port");
         for(int i = 0; i < 12; i++){
             for(int j = 0; j < 6; j++){
-                if(i == 7 && j == 1){
+                if(i == 8 && j == 1){
                     contentPane.add(beginButton);
+                    continue;
+                }
+                if(i == 4 && j == 1){
+                    contentPane.add(txfdIPAdress);
+                    continue;
+                }
+                if(i == 6 && j == 1){
+                    contentPane.add(txfdPort);
                     continue;
                 }
                 contentPane.add(new JLabel());
@@ -72,8 +88,15 @@ public class MainWindow extends JPanel {
         beginButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
+                myName = JOptionPane.showInputDialog(beginInter, "请输入你的昵称", "Snake", JOptionPane.INFORMATION_MESSAGE);
                 beginInter.dispose();
+                System.out.println(myName);
+                String iPAdress = txfdIPAdress.getText();
+                int port = Integer.parseInt(txfdPort.getText());
                 Initial();
+                //connectToServer("192.168.244.1", 6888);
+                connectToServer(iPAdress, port);
+                sendMyName(myName);
                 rcvThread.start();
             }
         });
@@ -100,7 +123,7 @@ public class MainWindow extends JPanel {
             System.out.println(e.getMessage());
         }
         finally {
-            System.out.println(currentSound.getFrameLength());
+            System.out.println("Frame Length: " + currentSound.getFrameLength());
         }
     }
 
@@ -111,8 +134,7 @@ public class MainWindow extends JPanel {
         isOver = 0;
         mainWindow = new JFrame("Snake");
         mainWindow.add(this, "Center");
-        this.level = level;
-        backGround = new ImageIcon("./src/resource/background.jpg");
+        backGround = new ImageIcon(MainWindow.class.getResource("/resource/background.jpg"));
         //setBackGround(mainWindow);//set the background from source "./data/background.jpg"
         JPanel contentPanel = (JPanel)mainWindow.getContentPane();
         JPanel paneWest = new JPanel();
@@ -135,8 +157,9 @@ public class MainWindow extends JPanel {
             }
         }
         beforeGame = -1;
-        d = new Direction(-1, isPause, isOver);
-        egg = new ImageIcon("./src/resource/egg.png");
+        d = new Direction(-1, isPause, isOver, 2);
+        URL urlEgg = MainWindow.class.getResource("/resource/egg.png");
+        egg = new ImageIcon(urlEgg);
 
 
         //mainWindow.setSize(727, 800);
@@ -148,32 +171,95 @@ public class MainWindow extends JPanel {
         //mainWindow.setResizable(false);
     }
 
+    private void sendMyName(String name){
+        try{
+            String newName = new String(name.getBytes(), StandardCharsets.UTF_8) + "\n";
+            dosToServer.write(newName.getBytes());
+            //System.out.println(name.getBytes());
+        }
+        catch (IOException e){
+            System.out.println("I am sending name to server");
+        }
+    }
+
     private JPanel setChatPanel(){
         JPanel paneChat = new JPanel();
         JPanel paneInput = new JPanel();
-        txarChat = new TextArea();
-        txarInput = new TextArea();
+        txarChat = new JTextArea();
+        txarInput = new JTextArea();
+        txarRank = new JTextArea();
+        txarRank.setBorder(BorderFactory.createLineBorder(Color.BLACK));
+        txarRank.setEditable(false);
+        txarChat.setLineWrap(true);
+        txarChat.setEditable(false);
+        txarInput.setLineWrap(true);
         btChat = new JButton("Send");
+        btChat.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                try {
+                    String strSend = new String(txarInput.getText().getBytes("UTF-8"), "UTF-8");
+                    byte[] messb = strSend.getBytes();
+                    for(int j = 0; j < messb.length; j++) {
+                        System.out.println(Integer.toHexString(messb[j]));
+                    }
+                    System.out.println(messb);
+                    if (!strSend.equals("")) {
+                        d.setStrToSend(strSend);
+                        txarChat.append("Player " + myRole + ":" + strSend + "\n");
+                        txarInput.setText("");
+                    }
+                }
+                catch (UnsupportedEncodingException err){
+                    System.out.println("Can't be encoded by UTF-8");
+                    String strSend = txarInput.getText();
+                    if (!strSend.equals("")) {
+                        d.setStrToSend(strSend);
+                        txarChat.append("Player " + myRole + ":" + strSend + "\n");
+                        txarInput.setText("");
+                    }
+                }
+                finally {
+                    mainWindow.requestFocus();
+                }
+            }
+        });
         paneChat.setLayout(new BorderLayout());
+        JPanel paneRank = new JPanel();
+        paneChat.add(paneRank, "North");
+        paneRank.setLayout(new BorderLayout());
+        JLabel labRank = new JLabel("排行榜");
+        labRank.setHorizontalAlignment(JLabel.CENTER);
+        paneRank.add(labRank, "North");
+        paneRank.add(txarRank, "Center");
+        paneRank.setPreferredSize(new Dimension(backGround.getIconWidth() / 4, backGround.getIconHeight() / 2));
         paneChat.add(txarChat, "Center");
         paneChat.add(paneInput, "South");
         paneInput.setLayout(new BorderLayout());
         paneInput.add(txarInput, "Center");
         paneInput.add(btChat, "East");
-        txarChat.setPreferredSize(new Dimension(backGround.getIconWidth() / 4, this.getHeight()));
+        txarChat.setPreferredSize(new Dimension(backGround.getIconWidth() / 4, backGround.getIconHeight() / 2));
         paneInput.setPreferredSize(new Dimension(backGround.getIconWidth() / 4, 60));
+        paneInput.setBorder(BorderFactory.createLineBorder(Color.BLACK));
         txarInput.setPreferredSize(new Dimension(backGround.getIconWidth() * 4 / 5, 60));
         paneChat.setPreferredSize(new Dimension(backGround.getIconWidth() / 4, backGround.getIconHeight() + 60));
         return paneChat;
     }
 
-    void connectToServer(String ip, int port){
+    private void connectToServer(String ip, int port){
         System.out.printf("Connect to server %s at port %d\n", ip, port);
         try{
             socketClient = new Socket(ip, port);
-            brFromServer = new BufferedReader(new InputStreamReader(socketClient.getInputStream()));
+            brFromServer = new BufferedReader(new InputStreamReader(socketClient.getInputStream(), StandardCharsets.UTF_8));
+            //ObjectInputStream inObject = new ObjectInputStream(socketClient.getInputStream());
             dosToServer = new DataOutputStream(socketClient.getOutputStream());
             System.out.println("Connect Successfully");
+            String plrSet = brFromServer.readLine();
+            System.out.println(plrSet);
+            String[] plrSets = plrSet.split(",");
+            for(int i = 0; i < plrSets.length; i++){
+                txarRank.append(plrSets[i] + "\n");
+            }
             thread = new SendThread(d, dosToServer);
         }
         catch (IOException e){
@@ -197,7 +283,7 @@ public class MainWindow extends JPanel {
         try{
             String temp = brFromServer.readLine();
             //System.out.println(temp);
-            String[] mess = temp.split(",");
+            String[] mess = temp.split(",", -1);
             for(int i = 0; i < 30; i++){
                 for(int j = 0; j < 30; j++){
                     situation[i][j] = Integer.parseInt(mess[i * 30 + j]);
@@ -206,15 +292,30 @@ public class MainWindow extends JPanel {
             int k = Integer.parseInt(mess[29 * 30 + 29 + 1]);
             if(k == 3 - myRole){
                 pauseButton.setEnabled(false);
+                speedUPButton.setEnabled(false);
+                speedDownButton.setEnabled(false);
             }
             if(k == 0 && isPause > 0){
                 pauseButton.setEnabled(true);
+                speedDownButton.setEnabled(true);
+                speedUPButton.setEnabled(true);
             }
             isPause = k;
+            d.isPause = k;
             int getLives = Integer.parseInt(mess[29 * 30 + 29 + myRole + 1]);
+            int direction = Integer.parseInt(mess[29 * 30 + 29 + 3 + 3 + 2]);
+            //System.out.println(direction);
             if(getLives < myLives){
+                txarChat.append("System: You are dead\n");
+                System.out.println(d.direction);
                 d.direction = -1;
             }
+            else {
+                if(direction < 0 && (d.direction >= 0)){
+                    txarChat.append("System: You are in Hole\n");
+                }
+            }
+            d.direction = direction;
             myLives = getLives;
             opLives = Integer.parseInt(mess[29 * 30 + 29 + 3 - myRole + 1]);
             livesLabel[myRole - 1].setText("Lives: " + myLives);
@@ -224,9 +325,27 @@ public class MainWindow extends JPanel {
             scoreLabel[myRole - 1].setText("Score: " + myScore);
             scoreLabel[3 - myRole - 1].setText("Score: " + opScore);
             isOver = Integer.parseInt(mess[29 * 30 + 29 + 3 + 3]);
+            d.speed = Integer.parseInt(mess[29 * 30 + 29 + 6 + 1]);
+            if(d.speed == 0){
+                speedDownButton.setEnabled(false);
+                speedUPButton.setEnabled(true);
+            }
+            else if(d.speed == 4){
+                speedUPButton.setEnabled(false);
+                speedDownButton.setEnabled(true);
+            }
+            else{
+                speedDownButton.setEnabled(true);
+                speedUPButton.setEnabled(true);
+            }
+            if(!mess[29 * 30 + 29 + 6 + 3].equals("")){
+                txarChat.append("Player " + (3 - myRole) + ":" + mess[29 * 30 + 29 + 6 + 3] + "\n");
+            }
             if(isOver > 0){
                 d.setIsOver(isOver);
                 pauseButton.setEnabled(false);
+                speedUPButton.setEnabled(false);
+                speedDownButton.setEnabled(false);
             }
         }
         catch (IOException e){
@@ -234,9 +353,26 @@ public class MainWindow extends JPanel {
             isOver = 5;
             d.setIsOver(isOver);
             pauseButton.setEnabled(false);
+            speedUPButton.setEnabled(false);
+            speedDownButton.setEnabled(false);
         }
         finally {
             repaint();
+        }
+    }
+
+    void getRank(){
+        try {
+            String plrSet = brFromServer.readLine();
+            txarRank.setText("");
+            System.out.println(plrSet);
+            String[] plrSets = plrSet.split(",");
+            for (int i = 0; i < plrSets.length; i++) {
+                txarRank.append(plrSets[i] + "\n");
+            }
+        }
+        catch (IOException e){
+            System.out.println("Getting rank");
         }
     }
 
@@ -250,7 +386,6 @@ public class MainWindow extends JPanel {
             }
         }
         catch (IOException e){
-            e.printStackTrace();
             System.out.println("Receiving countdown");
         }
         finally {
@@ -259,16 +394,6 @@ public class MainWindow extends JPanel {
             thread.start();
         }
     }
-
-//    private void setBackGround(JFrame frame){
-//        backGround = new ImageIcon("./src/resource/background.jpg");
-//        JLabel backLabel = new JLabel(backGround);
-//        frame.getLayeredPane().add(backLabel, new Integer(-30001));
-//        System.out.println(backGround.getIconHeight());
-//        System.out.println(backGround.getIconWidth());
-//        frame.getLayeredPane().setPreferredSize(new Dimension(backGround.getIconWidth(), backGround.getIconHeight()));
-//        backLabel.setBounds(0,0, backGround.getIconWidth(), backGround.getIconHeight());
-//    }
 
     private JPanel getFunctionPanel(){
         JPanel fctPanel = new JPanel();
@@ -351,6 +476,40 @@ public class MainWindow extends JPanel {
     private JPanel getButtonPanel(){
         JPanel btnPanel = new JPanel();
         btnPanel.setBackground(new Color(90, 160, 25));
+        int[] xPoints = {5, 15, 15, 25, 25, 15, 15};
+        int[] yPoints = {17, 10, 17, 10, 24, 17, 24};
+        speedDownButton = new SpeedButton(xPoints, yPoints);
+        speedDownButton.setSize(30, 30);
+        speedDownButton.setFocusPainted(false);
+        speedDownButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                int temp = d.speed;
+                d.setSpeed(temp - 1);
+                if(d.speed == 0){
+                    speedDownButton.setEnabled(false);
+                }
+                speedUPButton.setEnabled(true);
+                mainWindow.requestFocus();
+            }
+        });
+        int[] xPoints2 = {8, 18, 18, 28, 18, 18, 8};
+        int[] yPoints2 = {10, 17, 10, 17, 24, 17, 24};
+        speedUPButton = new SpeedButton(xPoints2, yPoints2);
+        speedUPButton.setSize(30, 30);
+        speedUPButton.setFocusPainted(false);
+        speedUPButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                int temp = d.speed;
+                d.setSpeed(temp + 1);
+                if(d.speed == 4){
+                    speedUPButton.setEnabled(false);
+                }
+                speedDownButton.setEnabled(true);
+                mainWindow.requestFocus();
+            }
+        });
         pauseButton = new PauseButton();
         pauseButton.setSize(30, 30);
         pauseButton.setFocusPainted(false);
@@ -362,6 +521,8 @@ public class MainWindow extends JPanel {
                     isPause = 0;
                     d.setIsPause(isPause);
                     pauseButton.repaint();
+                    speedUPButton.setEnabled(true);
+                    speedDownButton.setEnabled(true);
                     mainWindow.requestFocus();
                 }
                 else{
@@ -370,10 +531,14 @@ public class MainWindow extends JPanel {
                     d.setIsPause(isPause);
                     pauseButton.repaint();
                     System.out.println("I Paused");
+                    speedUPButton.setEnabled(false);
+                    speedDownButton.setEnabled(false);
                 }
             }
         });
+        btnPanel.add(speedDownButton);
         btnPanel.add(pauseButton);
+        btnPanel.add(speedUPButton);
         musicButton = new MusicButton();
         musicButton.setSize(30, 30);
         musicButton.setFocusPainted(false);
@@ -403,16 +568,6 @@ public class MainWindow extends JPanel {
 
         return btnPanel;
     }
-
-//    private void playMusic(){
-//        File f = new File("./src/resource/music.wav");
-//        URI uri = f.getAbsoluteFile().toURI();
-//        Media media = new Media(uri.toString());
-//        MediaPlayer player = new MediaPlayer(media);
-//
-//        System.out.println(player.autoPlayProperty());
-//        player.setAutoPlay(true);
-//    }
 
     public void paintComponent(Graphics g){
         super.paintComponent(g);//info: every rectangle is 20 * 20
@@ -482,18 +637,13 @@ public class MainWindow extends JPanel {
             g.setFont(new Font("黑体", Font.BOLD, 30));
             g.drawString("Sorry, server break down!", (int)(4 * oneRecWidth), (int)(14 * oneRecHeight));
         }
-//        drawWall(g);
-//        drawHole(g);
-//        drawEgg(g);
-//        if(!mySnake.dead) {
-//            drawSnake(g, mySnake, Color.orange);
-//        }
-        //g.drawRect(1, 0, 600, 600);
     }
 
     private void drawWall(Graphics g, int x, int y){
         g.setColor(new Color(170, 231, 44));
-        g.fillRect((int)(x * oneRecWidth), (int)(y * oneRecHeight), (int)(oneRecWidth), (int)(oneRecHeight));
+        int width = (int)((x + 1) * oneRecWidth) - (int)(x * oneRecWidth);
+        int height = (int)((y + 1) * oneRecWidth) - (int)(y * oneRecWidth);
+        g.fillRect((int)(x * oneRecWidth), (int)(y * oneRecHeight), width, height);
     }
 
     private void drawHole(Graphics g, int x, int y){
@@ -524,7 +674,7 @@ public class MainWindow extends JPanel {
         public void keyPressed(KeyEvent e) {
             super.keyPressed(e);
             int keyCode = e.getKeyCode();
-            if(isPause == 0) {
+            if(isPause == 0 && d.direction >= 0) {
                 if (myRole == 1) {
                     switch (keyCode) {
                         case KeyEvent.VK_W:
@@ -593,16 +743,22 @@ class Direction{
     int direction;
     int isPause;
     int isOver;
+    String strToSend;
+    int speed;
     static String[] Tran = {"UP","RIGHT", "DOWN", "LEFT"};
-    Direction(int direction, int isPause, int isOver){
+    Direction(int direction, int isPause, int isOver, int speed){
         this.direction = direction;
         this.isPause = isPause;
         this.isOver = isOver;
+        strToSend = "";
+        this.speed = speed;
     }
     synchronized void sendDirection(DataOutputStream out){
         try{
-            String toSend = direction + "," + isPause + "\n";
-            out.writeBytes(toSend);
+            String toSend = direction + "," + isPause + "," + speed + "," + strToSend + "\n";
+            byte[] bytes = toSend.getBytes();
+            out.write(bytes);
+            strToSend = "";
             if(isOver == 0) {
                 wait();
             }
@@ -625,6 +781,16 @@ class Direction{
 
     synchronized  void setIsOver(int isOver){
         this.isOver = isOver;
+        notify();
+    }
+
+    synchronized  void setStrToSend(String toSend){
+        this.strToSend = toSend;
+        notify();
+    }
+
+    synchronized  void setSpeed(int speed){
+        this.speed = speed;
         notify();
     }
 }
@@ -651,26 +817,25 @@ class BeginPanel extends JPanel{
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-        ImageIcon icon = new ImageIcon("./src/resource/begin.JPG");
+        ImageIcon icon = new ImageIcon(BeginPanel.class.getResource("/resource/begin.JPG"));
         g.drawImage(icon.getImage(), 0, 0, this.getWidth(), this.getHeight(), this);
     }
 }
 
 class RCVThread extends Thread{
-    MainWindow mainWindow;
+    private MainWindow mainWindow;
     RCVThread(MainWindow mainWindow){
         this.mainWindow = mainWindow;
     }
     @Override
     public void run() {
         super.run();
-        mainWindow.requestFocus();
-        mainWindow.connectToServer("192.168.244.1", 6888);
         mainWindow.getRole();
         mainWindow.getMessage();
         mainWindow.getCountDown();
         while(mainWindow.isOver == 0){
             mainWindow.getMessage();
         }
+        mainWindow.getRank();
     }
 }

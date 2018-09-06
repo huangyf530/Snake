@@ -107,3 +107,18 @@ class MusicButton extends RButton{
         }
     }
 }
+
+class SpeedButton extends RButton{
+    int[] xPoints;
+    int[] yPoints;
+    SpeedButton(int[] x, int[] y){
+        super();
+        xPoints = x;
+        yPoints = y;
+    }
+    protected void paintComponent(Graphics g) {
+        super.paintComponent(g);
+        g.setColor(Color.black);
+        g.fillPolygon(xPoints, yPoints, 7);
+    }
+}

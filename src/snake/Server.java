@@ -3,14 +3,12 @@ package snake;
 import javax.swing.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.BufferedReader;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.util.Scanner;
 import java.util.Vector;
 
@@ -28,16 +26,19 @@ public class Server {
     private Egg[] egg;
     private int foodnum;
     private int foodWait;
+    private String [] strNames;
     private int[] reBornTime;
     private Snake[] snakes;
     private int[] snakeLeft;
-    private int delay;
+    private int[] delay = {500, 300, 200, 140, 100};
+    private int speed;
     private int[] score;
     private Timer timer;
     private rcvThread[] rcvthread;
+    private String[] toSendFromI;
     private final GameInfo gameInfo = new GameInfo();
     private final Time time = new Time();
-    private static int[] speed = {500, 200, 100};
+    private PlayerInfoSet plrRank;
 
     public static void main(String[] args){
         System.out.println("Please input the listening port");
@@ -49,7 +50,7 @@ public class Server {
         }
         Server server = new Server(port);
         server.listenRequest(port);
-        server.delay = 200;
+        server.speed = 2;
         server.getInitialScene();
         server.sendInitialSituation();
         server.countDown(5);
@@ -62,6 +63,10 @@ public class Server {
         catch (InterruptedException e){
             System.out.println("Thread join");
         }
+        server.plrRank.getNewRank(server.strNames[0], server.score[0]);
+        server.plrRank.getNewRank(server.strNames[1], server.score[1]);
+        server.plrRank.saveRank();
+        server.sendRank();
         server.printWinner();
     }
 
@@ -71,6 +76,18 @@ public class Server {
         }
         else{
             System.out.println("Game over, Player 2 win!");
+        }
+    }
+
+    private void sendRank(){
+        System.out.println(plrRank.toString());
+        try{
+            dosOutToClient.elementAt(0).write(plrRank.toString().getBytes());
+            dosOutToClient.elementAt(1).write(plrRank.toString().getBytes());
+        }
+        catch (IOException e){
+            System.out.println("IOException");
+            System.out.println(e.getMessage());
         }
     }
 
@@ -86,19 +103,24 @@ public class Server {
                 toSend = toSend + Integer.toString(situation[i][j]) + ",";
             }
         }
-        String toSendi = toSend + gameInfo.isPause + "," + snakeLeft[0] + "," + snakeLeft[1] + "," + score[0] + "," + score[1]
-                + ","+ gameInfo.isOver + "\n";
-        byte[] send = toSendi.getBytes();
-        //System.out.print(toSendi);
-        //System.out.printf("Time Construct Message: %d\n", time.getTime());
+        toSend = toSend + gameInfo.isPause + "," + snakeLeft[0] + "," + snakeLeft[1] + "," + score[0] + "," + score[1]
+                + ","+ gameInfo.isOver + "," + speed;
+        byte[] send;
+        String toSendi;
         try {
+            toSendi = toSend + "," + snakes[0].direction + "," + toSendFromI[1] + "\n";
+            send = toSendi.getBytes();
             dosOutToClient.elementAt(0).write(send);
+            toSendFromI[1] = "";
         }
         catch (IOException e){
             System.out.println("I am sending message to player 1! But player 1 is offline!");
         }
         try {
+            toSendi = toSend + "," + snakes[1].direction + "," + toSendFromI[0] + "\n";
+            send = toSendi.getBytes();
             dosOutToClient.elementAt(1).write(send);
+            toSendFromI[0] = "";
         }
         catch (IOException e){
             System.out.println("I am sending message to player 2! But player 2 is offline!");
@@ -112,38 +134,10 @@ public class Server {
             if(gameInfo.isOver > 0){
                 timer.stop();
                 time.Pause();
-                try{
-                    brInFromClient.elementAt(0).close();
-                    brInFromClient.elementAt(1).close();
-                }
-                catch (IOException e){
-                    System.out.println(e.getMessage());
-                }
-                rcvthread[0].interrupt();
-                rcvthread[1].interrupt();
                 System.out.println("Game Over!");
             }
         }
     }
-
-//    private void sendSituation(){
-//        try {
-//            for(int i = 0; i < 2; i++) {
-//                int len = snakes[i].bodyLocation.size();
-//                dosOutToClient.elementAt(i).write(len);
-//                for (int j = 0; j < len; j++) {
-//                    int x = snakes[i].bodyLocation.elementAt(j).X;
-//                    int y = snakes[i].bodyLocation.elementAt(j).Y;
-//                    dosOutToClient.elementAt(i).write(x);
-//                    dosOutToClient.elementAt(i).write(y);
-//                }
-//                dosOutToClient.elementAt(i).write();
-//            }
-//        }
-//        catch (IOException e){
-//            System.out.println("Sending snakes");
-//        }
-//    }
 
     private Server(int port){
         try{
@@ -161,9 +155,11 @@ public class Server {
             snakes = new Snake[2];
             snakeLeft = new int[2];
             score = new int[2];
-            score[0] = score[1] = 0;
+            toSendFromI = new String[2];
+            strNames = new String[2];
             gameInfo.isOver = 0;
             gameInfo.isPause = 0;
+            plrRank = new PlayerInfoSet();
         }
         catch (IOException err){
             err.printStackTrace();
@@ -180,11 +176,15 @@ public class Server {
                 System.out.println("Listening...");
                 Socket newSocket = serverSocket.accept();
                 clients.add(newSocket);
-                BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(newSocket.getInputStream()));
+                BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(newSocket.getInputStream(), StandardCharsets.UTF_8));
                 brInFromClient.add(bufferedReader);
                 DataOutputStream dataOutputStream = new DataOutputStream(newSocket.getOutputStream());
                 dosOutToClient.add(dataOutputStream);
-                System.out.println("A new client add to the game...");
+//                ObjectOutputStream outObject = new ObjectOutputStream(newSocket.getOutputStream());
+//                outObject.writeObject(plrRank);
+                System.out.println(plrRank.toString());
+                dataOutputStream.write(plrRank.toString().getBytes());
+                System.out.println(getName(i - 1) + " add to the game...");
                 dosOutToClient.elementAt(i - 1).write(i);
                 i++;
             }
@@ -196,6 +196,17 @@ public class Server {
         catch (IOException e){
             e.printStackTrace();
         }
+    }
+
+    private String getName(int i){
+        try{
+            strNames[i] = brInFromClient.elementAt(i).readLine();
+            //System.out.println(strNames[i].getBytes());
+        }
+        catch (IOException e){
+            System.out.println("Player" + (i + 1) + " is offline!");
+        }
+        return strNames[i];
     }
 
     private void countDown(int k){
@@ -234,13 +245,23 @@ public class Server {
         try{
             String rcv = brInFromClient.elementAt(i).readLine();
             System.out.println(rcv);
-            String[] mess = rcv.split(",");
+            String[] mess = rcv.split(",", -1);
             synchronized (gameInfo) {
                 int direction = Integer.parseInt(mess[0]);
                 if (direction >= 0 && direction < 4 && !snakes[i].headInHole) {
                     snakes[i].direction = direction;
                 }
                 int temp = Integer.parseInt(mess[1]);
+                int speedTemp = Integer.parseInt(mess[2]);
+                if(speedTemp != speed){
+                    timer.setDelay(delay[speedTemp]);
+                    speed = speedTemp;
+                }
+                toSendFromI[i] = mess[3];
+                byte[] messb = mess[3].getBytes();
+                for(int j = 0; j < messb.length; j++) {
+                    System.out.println(Integer.toHexString(messb[j]));
+                }
                 if (temp > 0 && gameInfo.isPause == 0) {
                     gameInfo.isPause = temp;
                 } else if (gameInfo.isPause > 0 && temp == 0) {
@@ -248,12 +269,12 @@ public class Server {
                     timer.start();
                     time.Begin();
                 }
-                System.out.printf("Snake[%d].direction = %d\n", i, snakes[i].direction);
             }
         }
         catch (IOException e){
             System.out.printf("Player %d is offline!\n", i + 1);
             gameInfo.isOver = i + 3;
+            sendInitialSituation();
         }
     }
 
@@ -390,9 +411,10 @@ public class Server {
         getNewEgg();
         snakeLeft[0] = 5;
         snakeLeft[1] = 5;
+        toSendFromI[0] = toSendFromI[1] = "";
         snakes[0] = new Snake(situation, 0);
         snakes[1] = new Snake(situation, 1);
-        timer = new Timer(delay, new MoveAdapter());
+        timer = new Timer(delay[speed], new MoveAdapter());
         printSituation();
     }
 
@@ -410,7 +432,7 @@ public class Server {
             foodnum--;
             getEgg(x, y).valid = false;
             if(foodnum == 0){
-                foodWait = 2000 / delay;
+                foodWait = 2000 / delay[speed];
             }
         }
     }
@@ -447,7 +469,7 @@ public class Server {
                 Location nextLocation = snakes[i].getNextPosition(snakes[i].bodyLocation.elementAt(0).X,
                         snakes[i].bodyLocation.elementAt(0).Y, snakes[i].direction);
                 if (situation[nextLocation.Y][nextLocation.X] == 2) {
-                    snakes[i].rushHole(judgeHole(nextLocation.X, nextLocation.Y), 1000 / delay);
+                    snakes[i].rushHole(judgeHole(nextLocation.X, nextLocation.Y), 1000 / delay[speed]);
                 }
                 else if (situation[nextLocation.Y][nextLocation.X] == 0 || situation[nextLocation.Y][nextLocation.X] == 3) {
                     checkFood(nextLocation.X, nextLocation.Y, i);
@@ -457,7 +479,7 @@ public class Server {
                         situation[nextLocation.Y][nextLocation.X] == 5){
                     //printSituation();
                     snakes[i].goDie();
-                    reBornTime[i] = 2000 / delay;
+                    reBornTime[i] = 2000 / delay[speed];
                     snakeLeft[i]--;
                     if(snakeLeft[i] == 0){
                         gameInfo.isOver = i + 1;
